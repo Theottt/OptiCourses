@@ -8,19 +8,19 @@ load_dotenv()
 COOKIE_STR = os.getenv("CARREFOUR_COOKIE")
 USER_AGENT_STR = os.getenv("CARREFOUR_USER_AGENT")
 
+produit_cherche = input("Quel produit veux-tu chercher ? ")
+
 # 2. Préparer les en-têtes et le corps de la requête
 headers = {
     'accept': '*/*',
     'accept-language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
     'content-type': 'application/json',
     'origin': 'https://www.carrefour.fr',
-    'referer': 'https://www.carrefour.fr/s?q=oeufs',
+    'referer': f'https://www.carrefour.fr/s?q={produit_cherche}',
     'user-agent': USER_AGENT_STR,
     'cookie': COOKIE_STR,
     'x-requested-with': 'XMLHttpRequest',
 }
-
-produit_cherche = input("Quel produit veux-tu chercher ? ")
 
 json_data = {
     'searchTerm': produit_cherche,

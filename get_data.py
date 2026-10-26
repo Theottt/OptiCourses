@@ -39,10 +39,33 @@ response = requests.post(
     impersonate="chrome"
 )
 
-print("Code de retour HTTP :", response.status_code)
 if response.status_code == 200:
-    print("Succès ! Données reçues :")
-    print(response.json())
+    data = response.json()
+    print("--- 🛒 LISTE DES PRODUITS TROUVÉS ---")
+    
+    # Le JSON de recherche de Carrefour renvoie souvent une liste de blocs
+    for block in data:
+        # On vérifie si le bloc contient des produits
+        products = block.get('products', [])
+        
+        for prod in products:
+            attrs = prod.get('attributes', {})
+            title = attrs.get('title', 'Titre inconnu')
+            brand = attrs.get('brand', 'Marque inconnue')
+            
+            # Récupération des offres de prix
+            offers = attrs.get('offers', {})
+            for ean, offer_data in offers.items():
+                for store_id, offer_details in offer_data.items():
+                    price_info = offer_details.get('attributes', {}).get('price', {})
+                    price = price_info.get('price', 0.0)
+                    per_unit = price_info.get('perUnitLabel', 'N/A')
+                    
+                    print(f"• {title} ({brand})")
+                    print(f"  Prix : {price} € | Soit {per_unit}")
+                    print("-" * 40)
+else:
+    print("Erreur lors de la récupération des données.")
 
 # Note: json_data will not be serialized by requests
 # exactly as it was in the original request.

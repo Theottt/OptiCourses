@@ -20,8 +20,10 @@ headers = {
     'x-requested-with': 'XMLHttpRequest',
 }
 
+produit_cherche = input("Quel produit veux-tu chercher ? ")
+
 json_data = {
-    'searchTerm': 'oeufs',
+    'searchTerm': produit_cherche,
     'categories': [],
     'productFilters': [
         {

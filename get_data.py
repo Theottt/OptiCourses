@@ -1,96 +1,84 @@
-import os
-from dotenv import load_dotenv
-from curl_cffi import requests
+from playwright.sync_api import sync_playwright
+import json
 
-# 1. Charger les variables d'environnement depuis le fichier .env
-load_dotenv()
+def get_carrefour_products(query="pates"):
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True) # False pour voir le navigateur, True pour cacher
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 800}
+        )
+        page = context.new_page()
 
-COOKIE_STR = os.getenv("CARREFOUR_COOKIE")
-USER_AGENT_STR = os.getenv("CARREFOUR_USER_AGENT")
-
-produit_cherche = input("Quel produit veux-tu chercher ? ")
-
-# 2. Préparer les en-têtes et le corps de la requête
-headers = {
-    'accept': '*/*',
-    'accept-language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
-    'content-type': 'application/json',
-    'origin': 'https://www.carrefour.fr',
-    'referer': f'https://www.carrefour.fr/s?q={produit_cherche}',
-    'user-agent': USER_AGENT_STR,
-    'cookie': COOKIE_STR,
-    'x-requested-with': 'XMLHttpRequest',
-}
-
-json_data = {
-    'searchTerm': produit_cherche,
-    'categories': [],
-    'productFilters': [
-        {
-            'key': 'Platform',
-            'value': ['Mobile'],
-        },
-    ],
-}
-
-# 3. Envoi de la requête sécurisée
-response = requests.post(
-    'https://www.carrefour.fr/api/marketing/search',
-    headers=headers,
-    json=json_data,
-    impersonate="chrome"
-)
-
-produits_analyses = []
-
-if response.status_code == 200:
-    data = response.json()
+        url = f"https://www.carrefour.fr/s?q={query}"
+        print(f"Chargement de : {url}")
+        
+        page.goto(url, wait_until="domcontentloaded", timeout=60000)
+        
+        # Ferme la bannière cookies si présente
+        try:
+            accept_button = page.locator("#onetrust-accept-btn-handler")
+            if accept_button.is_visible(timeout=4000):
+                accept_button.click()
+                print("Cookies acceptés.")
+        except:
+            pass
+        # Attend que les éléments produits soient visibles
+        page.wait_for_timeout(4000)
     
-    for block in data:
-        products = block.get('products', [])
-        for prod in products:
-            attrs = prod.get('attributes', {})
-            title = attrs.get('title', 'Titre inconnu')
-            brand = attrs.get('brand', 'Marque inconnue')
+        # Extraction ciblée basée sur ce qu'on vient de découvrir
+        print("Extraction des données...")
+        products = page.evaluate("""() => {
+            const items = [];
+            // On cible les liens principaux de cartes produits
+            const cards = document.querySelectorAll('a.product-card-click-wrapper');
             
-            offers = attrs.get('offers', {})
-            for ean, offer_data in offers.items():
-                for store_id, offer_details in offer_data.items():
-                    price_info = offer_details.get('attributes', {}).get('price', {})
-                    price = price_info.get('price', 0.0)
-                    per_unit_str = price_info.get('perUnitLabel', '')
-                    
-                    per_unit_price = 0.0
-                    try:
-                        # Nettoie la chaîne pour garder juste le nombre (ex: "5.83")
-                        clean_str = per_unit_str.split('€')[0].strip().replace(',', '.')
-                        per_unit_price = float(clean_str)
-                    except:
-                        pass
-                    
-                    # On stocke dans une liste propre
-                    produits_analyses.append({
-                        "title": title,
-                        "brand": brand,
-                        "price": price,
-                        "per_unit_price": per_unit_price,
-                        "per_unit_label": per_unit_str
-                    })
+            cards.forEach(card => {
+                // Le titre est dans le texte du lien ou dans un span dédié
+                const titleEl = card.querySelector('.product-card-title__text') || card;
+                
+                // On remonte au conteneur parent de la carte pour trouver le prix plus facilement
+                const cardContainer = card.closest('article') || card.parentElement;
+                
+                let priceText = "Prix non trouvé";
+                let unitPriceText = null;
 
-    # --- 2. LE TRI AUTOMATIQUE (Du moins cher au plus cher au kilo) ---
-    # On trie la liste en fonction du prix unitaire (en s'assurant qu'il est supérieur à 0)
-    produits_tries = sorted([p for p in produits_analyses if p["per_unit_price"] > 0], key=lambda x: x["per_unit_price"])
+                if (cardContainer) {
+                    // Recherche d'éléments contenant le prix (souvent dans des classes de type price)
+                    const priceEl = cardContainer.querySelector('[class*="price"], .product-price__amount');
+                    if (priceEl) {
+                        priceText = priceEl.innerText.trim().replace(/\\n/g, ' ');
+                    }
+                }
 
-    print(f"\n--- TOP DES MEILLEURES AFFAIRES (TRIÉES PAR PRIX AU KILO) ---")
-    for i, p in enumerate(produits_tries[:3], 1): # Affiche le Top 3
-        print(f"{i}. {p['title']}")
-        print(f"   Prix total : {p['price']} € | ➔ {p['per_unit_label']}")
-        print("-" * 40)
+                if (titleEl) {
+                    items.push({
+                        titre: titleEl.innerText.trim(),
+                        prix: priceText,
+                        lien: card.href
+                    });
+                }
+            });
+            return items;
+        }""")
 
-else:
-    print("Erreur lors de la récupération des données.")
+        browser.close()
+        return products
 
-# Note: json_data will not be serialized by requests
-# exactly as it was in the original request.
-#data = '{"searchTerm":"oeufs","categories":[],"productFilters":[{"key":"Platform","value":["Mobile"]}]}'
-#response = requests.post('https://www.carrefour.fr/api/marketing/search', cookies=cookies, headers=headers, data=data)
+if __name__ == "__main__":
+    query = "pates"
+    print(f"Lancement de la recherche pour '{query}'...")
+    results = get_carrefour_products(query)
+    
+    print(f"\nSuccès ! {len(results)} produits extraits.")
+    
+    # Affichage des 5 premiers résultats dans la console
+    for i, prod in enumerate(results[:5], 1):
+        print(f"\n{i}. Titre : {prod['titre']}")
+        print(f"   Prix  : {prod['prix']}")
+        print(f"   Lien  : {prod['lien']}")
+    
+    # Sauvegarde dans un fichier JSON pour OptiCourses
+    with open("carrefour_output.json", "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=2, ensure_ascii=False)
+    print("\nLes données ont été sauvegardées dans 'carrefour_output.json'.")

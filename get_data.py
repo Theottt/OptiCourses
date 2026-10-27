@@ -1,7 +1,8 @@
-from playwright.sync_api import sync_playwright
+import sys
 import json
+from playwright.sync_api import sync_playwright
 
-def get_carrefour_products(query="pates"):
+def get_carrefour_products(query):
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True) # False pour voir le navigateur, True pour cacher
         context = browser.new_context(
@@ -66,19 +67,26 @@ def get_carrefour_products(query="pates"):
         return products
 
 if __name__ == "__main__":
-    query = "pates"
-    print(f"Lancement de la recherche pour '{query}'...")
+    # Si l'utilisateur a passé un argument dans la ligne de commande (ex: python get_data.py pates)
+    if len(sys.argv) > 1:
+        query = " ".join(sys.argv[1:])
+    else:
+        # Sinon, message d'erreur propre pour éviter les blocages
+        print("Erreur : Veuillez spécifier un produit à rechercher.")
+        print("Exemple : python get_data.py \"pates\"")
+        sys.exit(1)
+        
+    print(f"\nLancement de la recherche pour '{query}'...")
     results = get_carrefour_products(query)
     
+    # Filtre anti-animaux si on cherche des pâtes
+    if "pate" in query.lower():
+        mots_interdits = ["chat", "chien", "croquette", "pâtée", "animal", "animaux", "litiere"]
+        results = [prod for prod in results if not any(mot in prod['titre'].lower() for mot in mots_interdits)]
+        
     print(f"\nSuccès ! {len(results)} produits extraits.")
     
-    # Affichage des 5 premiers résultats dans la console
-    for i, prod in enumerate(results[:5], 1):
-        print(f"\n{i}. Titre : {prod['titre']}")
-        print(f"   Prix  : {prod['prix']}")
-        print(f"   Lien  : {prod['lien']}")
-    
-    # Sauvegarde dans un fichier JSON pour OptiCourses
+    # Sauvegarde dans le JSON
     with open("carrefour_output.json", "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
-    print("\nLes données ont été sauvegardées dans 'carrefour_output.json'.")
+    print("Les données ont été sauvegardées dans 'carrefour_output.json'.")
